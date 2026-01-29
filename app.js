@@ -113,32 +113,20 @@ class SalesListManager {
 
         // Branch office filter
         const excludeBranches = document.getElementById('excludeBranchesFilter').checked;
-        const headquartersOnly = document.getElementById('headquartersOnlyFilter').checked;
 
-        if (excludeBranches || headquartersOnly) {
-            const branchKeywords = ['営業所', '支店', '出張所', 'サービスセンター', '営業部'];
-            const headquartersKeywords = ['本社', '本店', '本部'];
+        if (excludeBranches) {
+            const branchKeywords = ['営業所', '支店', '出張所', 'サービスセンター', '営業部', '支社', '営業拠点'];
 
             filtered = filtered.filter(item => {
-                const companyName = item.companyName.toLowerCase();
-                const address = (item.address || '').toLowerCase();
+                const companyName = item.companyName;
+                const address = item.address || '';
                 const combinedText = companyName + ' ' + address;
 
-                // Check if it's a branch
+                // Check if it contains branch keywords
                 const isBranch = branchKeywords.some(keyword => combinedText.includes(keyword));
 
-                // Check if it's headquarters
-                const isHeadquarters = headquartersKeywords.some(keyword => combinedText.includes(keyword));
-
-                if (headquartersOnly) {
-                    // Only show headquarters
-                    return isHeadquarters;
-                } else if (excludeBranches) {
-                    // Exclude branches (but allow headquarters and neutral companies)
-                    return !isBranch || isHeadquarters;
-                }
-
-                return true;
+                // Exclude branches
+                return !isBranch;
             });
         }
 
@@ -717,12 +705,8 @@ class SalesListManager {
             this.render();
         });
 
-        // Branch office filters
+        // Branch office filter
         document.getElementById('excludeBranchesFilter').addEventListener('change', () => {
-            this.render();
-        });
-
-        document.getElementById('headquartersOnlyFilter').addEventListener('change', () => {
             this.render();
         });
 
@@ -733,7 +717,6 @@ class SalesListManager {
             document.getElementById('industryFilter').value = '';
             document.getElementById('prospectFilter').value = '';
             document.getElementById('excludeBranchesFilter').checked = false;
-            document.getElementById('headquartersOnlyFilter').checked = false;
             this.render();
         });
 
@@ -1019,16 +1002,38 @@ class SalesListManager {
         this.closeSearchModal();
     }
 
-    // Select all search results
+    // Select all search results (toggle)
     selectAllResults() {
-        // Select all current results
-        this.searchResults.forEach((_, index) => {
-            this.selectedResults.add(index);
-        });
+        // Check if all results are already selected
+        const allSelected = this.searchResults.every((_, index) => this.selectedResults.has(index));
+
+        if (allSelected) {
+            // Deselect all
+            this.selectedResults.clear();
+        } else {
+            // Select all current results
+            this.searchResults.forEach((_, index) => {
+                this.selectedResults.add(index);
+            });
+        }
 
         // Update UI
         this.updateSelectedCount();
-        this.renderSearchResults();
+        this.updateCheckboxes();
+    }
+
+    // Update checkboxes to match selected state
+    updateCheckboxes() {
+        const checkboxes = document.querySelectorAll('.result-checkbox');
+        checkboxes.forEach((checkbox, index) => {
+            checkbox.checked = this.selectedResults.has(index);
+            const resultItem = checkbox.closest('.result-item');
+            if (checkbox.checked) {
+                resultItem.classList.add('selected');
+            } else {
+                resultItem.classList.remove('selected');
+            }
+        });
     }
 
     // Load more results (trigger next page if available)
