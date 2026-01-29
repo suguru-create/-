@@ -928,6 +928,12 @@ class SalesListManager {
                                 <span class="result-detail-icon">📍</span>
                                 <span>${place.address}</span>
                             </div>
+                            ${place.distance !== undefined ? `
+                                <div class="result-detail">
+                                    <span class="result-detail-icon">📏</span>
+                                    <span>検索地点から ${place.distance.toFixed(1)}km</span>
+                                </div>
+                            ` : ''}
                         </div>
                     </div>
                 </div>

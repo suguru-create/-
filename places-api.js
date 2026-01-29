@@ -91,10 +91,28 @@ async function searchPlaces(location, keyword) {
         // Create a geocoder to convert location to coordinates
         const geocoder = new google.maps.Geocoder();
 
+        // Normalize location query to prioritize Japanese locations
+        const normalizedLocation = location.includes('日本') ? location : `${location}, 日本`;
+
         return new Promise((resolve, reject) => {
-            geocoder.geocode({ address: location }, (results, status) => {
+            geocoder.geocode({
+                address: normalizedLocation,
+                region: 'jp', // Bias results to Japan
+                componentRestrictions: {
+                    country: 'JP' // Restrict to Japan only
+                }
+            }, (results, status) => {
                 if (status === 'OK' && results[0]) {
-                    const location = results[0].geometry.location;
+                    const geocodeResult = results[0];
+                    const centerLocation = geocodeResult.geometry.location;
+
+                    // Extract city name from geocode result
+                    const addressComponents = geocodeResult.address_components;
+                    const cityComponent = addressComponents.find(component =>
+                        component.types.includes('locality') ||
+                        component.types.includes('administrative_area_level_2')
+                    );
+                    const targetCity = cityComponent ? cityComponent.long_name : location;
 
                     // Create a map element (hidden)
                     let mapDiv = document.getElementById('hidden-map');
@@ -106,36 +124,65 @@ async function searchPlaces(location, keyword) {
                     }
 
                     const map = new google.maps.Map(mapDiv, {
-                        center: location,
+                        center: centerLocation,
                         zoom: 15
                     });
 
                     const service = new google.maps.places.PlacesService(map);
+
+                    // Use textSearch instead of nearbySearch for better location filtering
+                    // Include city name in the query for more accurate results
+                    const searchQuery = `${keyword} in ${targetCity}`;
+
                     const request = {
-                        location: location,
-                        radius: 20000, // 20km radius
-                        keyword: keyword,
+                        query: searchQuery,
+                        location: centerLocation,
+                        radius: 5000, // 5km radius as a bias (not a strict limit)
                         language: 'ja'
                     };
 
                     let allPlaces = [];
 
+                    // Function to calculate distance between two points (Haversine formula)
+                    const calculateDistance = (lat1, lng1, lat2, lng2) => {
+                        const R = 6371; // Earth's radius in km
+                        const dLat = (lat2 - lat1) * Math.PI / 180;
+                        const dLng = (lng2 - lng1) * Math.PI / 180;
+                        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                            Math.sin(dLng / 2) * Math.sin(dLng / 2);
+                        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+                        return R * c; // Distance in km
+                    };
+
                     // Function to process results and fetch next page if available
                     const processResults = (results, status, pagination) => {
                         if (status === google.maps.places.PlacesServiceStatus.OK) {
-                            // Add current page results
-                            const places = results.map(place => ({
-                                id: place.place_id,
-                                name: place.name,
-                                address: place.vicinity || '',
-                                rating: place.rating || 0,
-                                userRatingsTotal: place.user_ratings_total || 0,
-                                types: place.types || [],
-                                location: {
-                                    lat: place.geometry.location.lat(),
-                                    lng: place.geometry.location.lng()
-                                }
-                            }));
+                            // Map results and calculate distance from search center
+                            const places = results.map(place => {
+                                const placeLat = place.geometry.location.lat();
+                                const placeLng = place.geometry.location.lng();
+                                const distance = calculateDistance(
+                                    centerLocation.lat(),
+                                    centerLocation.lng(),
+                                    placeLat,
+                                    placeLng
+                                );
+
+                                return {
+                                    id: place.place_id,
+                                    name: place.name,
+                                    address: place.formatted_address || '',
+                                    rating: place.rating || 0,
+                                    userRatingsTotal: place.user_ratings_total || 0,
+                                    types: place.types || [],
+                                    location: {
+                                        lat: placeLat,
+                                        lng: placeLng
+                                    },
+                                    distance: distance // Distance in km from search center
+                                };
+                            });
 
                             allPlaces = allPlaces.concat(places);
 
@@ -146,7 +193,9 @@ async function searchPlaces(location, keyword) {
                                     pagination.nextPage();
                                 }, 2000);
                             } else {
-                                // No more pages, return all results
+                                // Sort all results by distance (closest first)
+                                allPlaces.sort((a, b) => a.distance - b.distance);
+
                                 incrementUsageCount();
                                 resolve(allPlaces);
                             }
@@ -158,8 +207,8 @@ async function searchPlaces(location, keyword) {
                         }
                     };
 
-                    // Start the search
-                    service.nearbySearch(request, processResults);
+                    // Start the search using textSearch
+                    service.textSearch(request, processResults);
                 } else {
                     reject(new Error(`住所の検索に失敗しました: ${status}`));
                 }
